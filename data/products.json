@@ -1,0 +1,259 @@
+[
+  {
+    "id": "P001",
+    "name": "StudySound Wireless Headphones",
+    "category": "headphones",
+    "price": 2499,
+    "rating": 4.4,
+    "features": [
+      "wireless",
+      "comfortable",
+      "long battery",
+      "noise isolation"
+    ],
+    "description": "Comfortable wireless headphones designed for long study sessions."
+  },
+  {
+    "id": "P002",
+    "name": "QuietPro ANC Headphones",
+    "category": "headphones",
+    "price": 4499,
+    "rating": 4.7,
+    "features": [
+      "wireless",
+      "active noise cancellation",
+      "comfortable",
+      "long battery"
+    ],
+    "description": "Wireless headphones with active noise cancellation for focused work and study."
+  },
+  {
+    "id": "P003",
+    "name": "BassGo Bluetooth Headphones",
+    "category": "headphones",
+    "price": 1799,
+    "rating": 4.2,
+    "features": [
+      "wireless",
+      "bass",
+      "lightweight",
+      "long battery"
+    ],
+    "description": "Affordable wireless headphones with strong bass and good battery life."
+  },
+
+  {
+    "id": "P004",
+    "name": "FlexFit Running Shoes",
+    "category": "running shoes",
+    "price": 2999,
+    "rating": 4.5,
+    "features": [
+      "lightweight",
+      "breathable",
+      "comfortable",
+      "running"
+    ],
+    "description": "Lightweight running shoes designed for comfortable daily workouts."
+  },
+  {
+    "id": "P005",
+    "name": "SpeedRun Pro Shoes",
+    "category": "running shoes",
+    "price": 3899,
+    "rating": 4.7,
+    "features": [
+      "running",
+      "lightweight",
+      "cushioned",
+      "breathable"
+    ],
+    "description": "Performance running shoes with cushioning and breathable materials."
+  },
+  {
+    "id": "P006",
+    "name": "Everyday Runner Shoes",
+    "category": "running shoes",
+    "price": 2199,
+    "rating": 4.2,
+    "features": [
+      "comfortable",
+      "lightweight",
+      "running",
+      "durable"
+    ],
+    "description": "Affordable everyday running shoes suitable for walking and jogging."
+  },
+
+  {
+    "id": "P007",
+    "name": "VoltMax 65W Fast Charger",
+    "category": "chargers",
+    "price": 1499,
+    "rating": 4.6,
+    "features": [
+      "fast charging",
+      "65W",
+      "USB-C",
+      "portable"
+    ],
+    "description": "Compact 65W USB-C fast charger for phones, tablets and compatible laptops."
+  },
+  {
+    "id": "P008",
+    "name": "ChargePro 33W Adapter",
+    "category": "chargers",
+    "price": 899,
+    "rating": 4.4,
+    "features": [
+      "fast charging",
+      "33W",
+      "USB-C",
+      "compact"
+    ],
+    "description": "Compact 33W charger for everyday smartphone charging."
+  },
+  {
+    "id": "P009",
+    "name": "TravelCharge Dual Port",
+    "category": "chargers",
+    "price": 1199,
+    "rating": 4.3,
+    "features": [
+      "dual port",
+      "fast charging",
+      "portable",
+      "travel"
+    ],
+    "description": "Portable dual-port charger designed for travel and everyday use."
+  },
+
+  {
+    "id": "P010",
+    "name": "TypePro Wireless Mouse",
+    "category": "computer accessories",
+    "price": 999,
+    "rating": 4.4,
+    "features": [
+      "wireless",
+      "ergonomic",
+      "quiet click",
+      "portable"
+    ],
+    "description": "Ergonomic wireless mouse designed for comfortable daily computer use."
+  },
+  {
+    "id": "P011",
+    "name": "GameMaster RGB Mouse",
+    "category": "computer accessories",
+    "price": 1799,
+    "rating": 4.6,
+    "features": [
+      "gaming",
+      "RGB",
+      "ergonomic",
+      "high precision"
+    ],
+    "description": "Responsive gaming mouse with RGB lighting and precision tracking."
+  },
+  {
+    "id": "P012",
+    "name": "ComfortKey Mechanical Keyboard",
+    "category": "computer accessories",
+    "price": 2499,
+    "rating": 4.5,
+    "features": [
+      "mechanical",
+      "gaming",
+      "comfortable",
+      "backlit"
+    ],
+    "description": "Mechanical keyboard with comfortable keys and backlighting for work and gaming."
+  },
+
+  {
+    "id": "P013",
+    "name": "LaptopStand Pro",
+    "category": "laptop accessories",
+    "price": 1299,
+    "rating": 4.5,
+    "features": [
+      "portable",
+      "ergonomic",
+      "adjustable",
+      "lightweight"
+    ],
+    "description": "Adjustable laptop stand designed to improve desk ergonomics."
+  },
+  {
+    "id": "P014",
+    "name": "Laptop Sleeve 15",
+    "category": "laptop accessories",
+    "price": 899,
+    "rating": 4.3,
+    "features": [
+      "protective",
+      "lightweight",
+      "portable",
+      "water resistant"
+    ],
+    "description": "Lightweight protective laptop sleeve with a water-resistant exterior."
+  },
+  {
+    "id": "P015",
+    "name": "USB-C Laptop Hub",
+    "category": "laptop accessories",
+    "price": 1999,
+    "rating": 4.6,
+    "features": [
+      "USB-C",
+      "portable",
+      "HDMI",
+      "multiple ports"
+    ],
+    "description": "Compact USB-C hub providing multiple ports for laptops and tablets."
+  },
+
+  {
+    "id": "P016",
+    "name": "SmartFit Sports Band",
+    "category": "sports accessories",
+    "price": 1599,
+    "rating": 4.2,
+    "features": [
+      "fitness",
+      "lightweight",
+      "comfortable",
+      "running"
+    ],
+    "description": "Lightweight fitness band designed for everyday workouts and running."
+  },
+  {
+    "id": "P017",
+    "name": "RunTrack Hydration Bottle",
+    "category": "sports accessories",
+    "price": 699,
+    "rating": 4.5,
+    "features": [
+      "running",
+      "lightweight",
+      "portable",
+      "leak resistant"
+    ],
+    "description": "Lightweight hydration bottle designed for running and outdoor workouts."
+  },
+  {
+    "id": "P018",
+    "name": "ActiveFit Resistance Bands",
+    "category": "sports accessories",
+    "price": 999,
+    "rating": 4.4,
+    "features": [
+      "fitness",
+      "portable",
+      "workout",
+      "lightweight"
+    ],
+    "description": "Portable resistance bands suitable for home workouts and strength training."
+  }
+]
