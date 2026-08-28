@@ -22,15 +22,77 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Use Render environment variable if available.
+# Otherwise use a stable default model.
 GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
-    "gemini-3.7-flash"
+    "gemini-2.5-flash"
 )
 
 GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/"
+    "https://generativelanguage.googleapis.com/v1beta/"
     f"models/{GEMINI_MODEL}:generateContent"
 )
+
+
+# ============================================================
+# GEMINI REQUEST FUNCTION
+# ============================================================
+
+def call_gemini(prompt, temperature=0):
+    """
+    Send a prompt to Gemini and return the generated text.
+    """
+
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY environment variable is not configured."
+        )
+
+    response = requests.post(
+        GEMINI_URL,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+        },
+        json={
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": temperature
+            }
+        },
+        timeout=120
+    )
+
+    # Show useful Gemini error instead of only "500 Internal Server Error"
+    if not response.ok:
+        raise RuntimeError(
+            f"Gemini API error {response.status_code}: "
+            f"{response.text}"
+        )
+
+    data = response.json()
+
+    try:
+        return (
+            data["candidates"][0]
+            ["content"]
+            ["parts"][0]
+            ["text"]
+            .strip()
+        )
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(
+            f"Unexpected Gemini response: {data}"
+        )
 
 
 # ============================================================
@@ -39,14 +101,8 @@ GEMINI_URL = (
 
 def extract_customer_requirements(user_message):
     """
-    Use Gemini to understand the customer's
-    shopping requirements.
+    Use Gemini to understand the customer's shopping requirements.
     """
-
-    if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY environment variable is not configured."
-        )
 
     prompt = f"""
 You are the requirement extraction component of PayPilot AI.
@@ -125,44 +181,111 @@ Customer request:
 {user_message}
 """
 
-    response = requests.post(
-        GEMINI_URL,
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY
-        },
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0,
-                "responseMimeType": "application/json"
-            }
-        },
-        timeout=120
-    )
+    # Try the configured model first.
+    # If Gemini temporarily returns 503, try a fallback model.
+    models_to_try = [
+        GEMINI_MODEL,
+        "gemini-2.5-flash"
+    ]
 
-    response.raise_for_status()
+    # Remove duplicate model names
+    models_to_try = list(dict.fromkeys(models_to_try))
 
-    data = response.json()
+    last_error = None
 
-    try:
-        result = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError):
-        raise RuntimeError(
-            f"Unexpected Gemini response: {data}"
+    for model in models_to_try:
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{model}:generateContent"
         )
 
-    result = result.strip()
+        try:
 
-    return json.loads(result)
+            response = requests.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": GEMINI_API_KEY
+                },
+                json={
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": prompt
+                                }
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": 0,
+                        "responseMimeType": "application/json"
+                    }
+                },
+                timeout=120
+            )
+
+            if response.ok:
+
+                data = response.json()
+
+                try:
+                    result = (
+                        data["candidates"][0]
+                        ["content"]
+                        ["parts"][0]
+                        ["text"]
+                    )
+
+                    result = result.strip()
+
+                    return json.loads(result)
+
+                except (KeyError, IndexError, TypeError) as error:
+
+                    last_error = RuntimeError(
+                        f"Unexpected Gemini response: {data}"
+                    )
+
+                except json.JSONDecodeError as error:
+
+                    last_error = RuntimeError(
+                        f"Gemini returned invalid JSON: {result}"
+                    )
+
+            else:
+
+                last_error = RuntimeError(
+                    f"Gemini model {model} returned "
+                    f"{response.status_code}: {response.text}"
+                )
+
+                # Try fallback model for server errors
+                if response.status_code in [429, 500, 502, 503, 504]:
+                    continue
+
+                raise last_error
+
+        except requests.exceptions.Timeout as error:
+
+            last_error = RuntimeError(
+                f"Gemini request timed out for model {model}."
+            )
+
+            continue
+
+        except requests.exceptions.ConnectionError as error:
+
+            last_error = RuntimeError(
+                "Could not connect to Gemini API."
+            )
+
+            continue
+
+    raise last_error or RuntimeError(
+        "Gemini API request failed."
+    )
 
 
 # ============================================================
@@ -234,9 +357,6 @@ def create_recommendation(user_message):
 # ============================================================
 
 def print_requirements(requirements):
-    """
-    Display the extracted customer requirements.
-    """
 
     print("\nCUSTOMER REQUIREMENTS")
     print("---------------------")
@@ -255,9 +375,6 @@ def print_requirements(requirements):
 # ============================================================
 
 def print_products(products):
-    """
-    Display matching products.
-    """
 
     print("\nMATCHING PRODUCTS")
     print("-----------------")
@@ -299,9 +416,6 @@ def print_products(products):
 # ============================================================
 
 def print_best_recommendation(products):
-    """
-    Display the highest-ranked product.
-    """
 
     if not products:
         return
@@ -336,10 +450,6 @@ def print_recommendation_reasons(
     requirements,
     products
 ):
-    """
-    Explain why the highest-ranked product
-    is a good recommendation.
-    """
 
     if not products:
         return
@@ -438,50 +548,26 @@ def main():
 
     try:
 
-        # ----------------------------------------------------
-        # RUN PAYPILOT AI
-        # ----------------------------------------------------
-
         result = create_recommendation(
             user_message
         )
-
-        # ----------------------------------------------------
-        # SHOW CUSTOMER REQUIREMENTS
-        # ----------------------------------------------------
 
         print_requirements(
             result["requirements"]
         )
 
-        # ----------------------------------------------------
-        # SHOW PRODUCTS
-        # ----------------------------------------------------
-
         print_products(
             result["products"]
         )
-
-        # ----------------------------------------------------
-        # SHOW BEST PRODUCT
-        # ----------------------------------------------------
 
         print_best_recommendation(
             result["products"]
         )
 
-        # ----------------------------------------------------
-        # SHOW REASONS
-        # ----------------------------------------------------
-
         print_recommendation_reasons(
             result["requirements"],
             result["products"]
         )
-
-        # ----------------------------------------------------
-        # SHOW HUMAN-FRIENDLY AI RESPONSE
-        # ----------------------------------------------------
 
         print("\nPAYPILOT AI RESPONSE")
         print("--------------------")
@@ -499,10 +585,6 @@ def main():
             "The AI returned an invalid JSON response."
         )
 
-        print(
-            "Please run the program again."
-        )
-
     except requests.exceptions.ConnectionError:
 
         print("\nERROR")
@@ -513,8 +595,7 @@ def main():
         )
 
         print(
-            "Please check your internet connection "
-            "and GEMINI_API_KEY."
+            "Please check GEMINI_API_KEY."
         )
 
     except requests.exceptions.Timeout:
@@ -526,10 +607,6 @@ def main():
             "Gemini API took too long to respond."
         )
 
-        print(
-            "Please try again."
-        )
-
     except requests.exceptions.HTTPError as error:
 
         print("\nGEMINI API ERROR")
@@ -537,12 +614,8 @@ def main():
 
         print(error)
 
-        try:
-            print(
-                error.response.text
-            )
-        except Exception:
-            pass
+        if error.response is not None:
+            print(error.response.text)
 
     except Exception as error:
 
