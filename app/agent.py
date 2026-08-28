@@ -1,6 +1,7 @@
 import json
-import requests
 import os
+import re
+import requests
 
 from dotenv import load_dotenv
 
@@ -17,82 +18,233 @@ load_dotenv()
 
 
 # ============================================================
-# GEMINI CONFIGURATION
+# OLLAMA CONFIGURATION
 # ============================================================
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Use Render environment variable if available.
-# Otherwise use a stable default model.
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.5-flash"
+OLLAMA_URL = os.getenv(
+    "OLLAMA_URL",
+    "http://127.0.0.1:11434/api/generate"
 )
 
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    f"models/{GEMINI_MODEL}:generateContent"
+OLLAMA_MODEL = os.getenv(
+    "OLLAMA_MODEL",
+    "qwen2.5:7b"
 )
 
 
 # ============================================================
-# GEMINI REQUEST FUNCTION
+# CALL OLLAMA
 # ============================================================
 
-def call_gemini(prompt, temperature=0):
+def call_ollama(prompt, temperature=0):
     """
-    Send a prompt to Gemini and return the generated text.
+    Send a prompt to local Ollama and return generated text.
     """
 
-    if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY environment variable is not configured."
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": temperature
+                }
+            },
+            timeout=180
         )
 
-    response = requests.post(
-        GEMINI_URL,
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY
-        },
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": temperature
-            }
-        },
-        timeout=120
-    )
+    except requests.exceptions.ConnectionError as error:
+        raise RuntimeError(
+            "Could not connect to Ollama. "
+            "Make sure Ollama is running and "
+            f"{OLLAMA_MODEL} is installed."
+        ) from error
 
-    # Show useful Gemini error instead of only "500 Internal Server Error"
+    except requests.exceptions.Timeout as error:
+        raise RuntimeError(
+            "Ollama took too long to respond."
+        ) from error
+
     if not response.ok:
         raise RuntimeError(
-            f"Gemini API error {response.status_code}: "
+            f"Ollama API error {response.status_code}: "
             f"{response.text}"
         )
 
-    data = response.json()
-
     try:
-        return (
-            data["candidates"][0]
-            ["content"]
-            ["parts"][0]
-            ["text"]
-            .strip()
-        )
-    except (KeyError, IndexError, TypeError):
+        data = response.json()
+    except ValueError as error:
         raise RuntimeError(
-            f"Unexpected Gemini response: {data}"
+            f"Ollama returned invalid JSON: {response.text}"
+        ) from error
+
+    if "response" not in data:
+        raise RuntimeError(
+            f"Unexpected Ollama response: {data}"
         )
+
+    return str(data["response"]).strip()
+
+
+# ============================================================
+# CLEAN JSON FROM OLLAMA
+# ============================================================
+
+def clean_json_response(text):
+    """
+    Remove markdown/code fences and extract JSON.
+    """
+
+    text = text.strip()
+
+    # Remove markdown fences
+    text = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    text = re.sub(
+        r"\s*```$",
+        "",
+        text
+    )
+
+    text = text.strip()
+
+    # Find JSON object if Ollama added extra text
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+
+    return text
+
+
+# ============================================================
+# FALLBACK REQUIREMENT EXTRACTION
+# ============================================================
+
+def fallback_requirements(user_message):
+    """
+    Extract basic requirements without AI.
+    This prevents the entire API from failing
+    if Ollama returns invalid JSON.
+    """
+
+    text = user_message.lower()
+
+    # --------------------------------------------------------
+    # Category
+    # --------------------------------------------------------
+
+    category = None
+
+    if any(word in text for word in [
+        "headphone",
+        "headphones",
+        "earphone",
+        "earphones",
+        "headset"
+    ]):
+        category = "headphones"
+
+    elif any(word in text for word in [
+        "running shoe",
+        "running shoes",
+        "sports shoe",
+        "sports shoes"
+    ]):
+        category = "running shoes"
+
+    elif any(word in text for word in [
+        "charger",
+        "charging"
+    ]):
+        category = "chargers"
+
+    elif any(word in text for word in [
+        "laptop accessory",
+        "laptop accessories"
+    ]):
+        category = "laptop accessories"
+
+    elif any(word in text for word in [
+        "computer accessory",
+        "computer accessories",
+        "mouse",
+        "keyboard"
+    ]):
+        category = "computer accessories"
+
+    elif any(word in text for word in [
+        "sports accessory",
+        "sports accessories"
+    ]):
+        category = "sports accessories"
+
+    # --------------------------------------------------------
+    # Budget
+    # --------------------------------------------------------
+
+    max_price = None
+
+    budget_patterns = [
+        r"under\s*[₹rs.]?\s*([\d,]+)",
+        r"below\s*[₹rs.]?\s*([\d,]+)",
+        r"less than\s*[₹rs.]?\s*([\d,]+)",
+        r"within\s*[₹rs.]?\s*([\d,]+)",
+        r"budget\s*(?:of|is)?\s*[₹rs.]?\s*([\d,]+)"
+    ]
+
+    for pattern in budget_patterns:
+        match = re.search(pattern, text)
+
+        if match:
+            try:
+                max_price = int(
+                    match.group(1).replace(",", "")
+                )
+            except ValueError:
+                max_price = None
+
+            break
+
+    # --------------------------------------------------------
+    # Preferences
+    # --------------------------------------------------------
+
+    preferences = []
+
+    preference_words = [
+        "wireless",
+        "comfortable",
+        "noise cancellation",
+        "long battery",
+        "lightweight",
+        "portable",
+        "fast charging",
+        "ergonomic",
+        "breathable",
+        "studying",
+        "gaming",
+        "running",
+        "travel"
+    ]
+
+    for preference in preference_words:
+        if preference in text:
+            preferences.append(preference)
+
+    return {
+        "category": category,
+        "max_price": max_price,
+        "preferences": preferences
+    }
 
 
 # ============================================================
@@ -101,13 +253,19 @@ def call_gemini(prompt, temperature=0):
 
 def extract_customer_requirements(user_message):
     """
-    Use Gemini to understand the customer's shopping requirements.
+    Use Ollama/Qwen to understand the customer's
+    shopping requirements.
+
+    If Ollama returns invalid JSON, use a local
+    fallback parser instead of crashing.
     """
 
     prompt = f"""
 You are the requirement extraction component of PayPilot AI.
 
-Read the customer's shopping request and return ONLY valid JSON.
+Read the customer's shopping request.
+
+Return ONLY valid JSON.
 
 The JSON must contain exactly these fields:
 
@@ -117,7 +275,7 @@ The JSON must contain exactly these fields:
     "preferences": ["preference1", "preference2"]
 }}
 
-Available product categories are:
+Available product categories:
 
 - headphones
 - laptop accessories
@@ -126,166 +284,144 @@ Available product categories are:
 - running shoes
 - sports accessories
 
-Important rules:
+Rules:
 
-1. Use "headphones" when the customer asks for:
-   - headphones
-   - earphones
-   - headsets
+1. Use "headphones" for headphones, earphones, or headsets.
 
-2. Never use broad categories such as:
+2. Never use:
    - electronics
    - technology
    - gadgets
 
-3. Choose only one category from the available categories.
+3. Choose only ONE category.
 
 4. If no category matches, use null.
 
-5. Extract the customer's actual preferences.
+5. Extract only preferences actually mentioned.
 
-Examples of preferences:
+6. Examples of preferences:
+   - wireless
+   - comfortable
+   - noise cancellation
+   - long battery
+   - lightweight
+   - portable
+   - fast charging
+   - ergonomic
+   - breathable
+   - studying
+   - gaming
+   - running
+   - travel
 
-- wireless
-- comfortable
-- noise cancellation
-- long battery
-- lightweight
-- portable
-- fast charging
-- ergonomic
-- breathable
-- studying
-- gaming
-- running
-- travel
+7. If the customer says wireless headphones,
+   include "wireless".
 
-6. If the customer mentions "wireless headphones",
-   include "wireless" in preferences.
+8. If the customer says for studying,
+   include "studying".
 
-7. If the customer mentions "for studying",
-   include "studying" in preferences.
+9. If there is no budget, use null.
 
-8. If the customer does not mention a budget,
-   use null for max_price.
+10. Never invent information.
 
-9. Do not invent products.
-
-10. Return JSON only.
-
-Do not include explanations.
-Do not include markdown.
-Do not include code fences.
+11. Return JSON only.
 
 Customer request:
+
 {user_message}
 """
 
-    # Try the configured model first.
-    # If Gemini temporarily returns 503, try a fallback model.
-    models_to_try = [
-        GEMINI_MODEL,
-        "gemini-2.5-flash"
-    ]
-
-    # Remove duplicate model names
-    models_to_try = list(dict.fromkeys(models_to_try))
-
-    last_error = None
-
-    for model in models_to_try:
-
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/"
-            f"models/{model}:generateContent"
+    try:
+        result = call_ollama(
+            prompt,
+            temperature=0
         )
 
-        try:
+        result = clean_json_response(result)
 
-            response = requests.post(
-                url,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": GEMINI_API_KEY
-                },
-                json={
-                    "contents": [
-                        {
-                            "parts": [
-                                {
-                                    "text": prompt
-                                }
-                            ]
-                        }
-                    ],
-                    "generationConfig": {
-                        "temperature": 0,
-                        "responseMimeType": "application/json"
-                    }
-                },
-                timeout=120
-            )
+        requirements = json.loads(result)
 
-            if response.ok:
+        if not isinstance(requirements, dict):
+            raise ValueError("Ollama response is not an object")
 
-                data = response.json()
+    except Exception as error:
 
-                try:
-                    result = (
-                        data["candidates"][0]
-                        ["content"]
-                        ["parts"][0]
-                        ["text"]
-                    )
+        print(
+            f"[WARNING] Ollama requirement extraction failed: "
+            f"{error}"
+        )
 
-                    result = result.strip()
+        print(
+            "[INFO] Using fallback requirement extraction."
+        )
 
-                    return json.loads(result)
+        requirements = fallback_requirements(
+            user_message
+        )
 
-                except (KeyError, IndexError, TypeError) as error:
+    # --------------------------------------------------------
+    # Normalize fields
+    # --------------------------------------------------------
 
-                    last_error = RuntimeError(
-                        f"Unexpected Gemini response: {data}"
-                    )
-
-                except json.JSONDecodeError as error:
-
-                    last_error = RuntimeError(
-                        f"Gemini returned invalid JSON: {result}"
-                    )
-
-            else:
-
-                last_error = RuntimeError(
-                    f"Gemini model {model} returned "
-                    f"{response.status_code}: {response.text}"
-                )
-
-                # Try fallback model for server errors
-                if response.status_code in [429, 500, 502, 503, 504]:
-                    continue
-
-                raise last_error
-
-        except requests.exceptions.Timeout as error:
-
-            last_error = RuntimeError(
-                f"Gemini request timed out for model {model}."
-            )
-
-            continue
-
-        except requests.exceptions.ConnectionError as error:
-
-            last_error = RuntimeError(
-                "Could not connect to Gemini API."
-            )
-
-            continue
-
-    raise last_error or RuntimeError(
-        "Gemini API request failed."
+    category = requirements.get(
+        "category"
     )
+
+    max_price = requirements.get(
+        "max_price"
+    )
+
+    preferences = requirements.get(
+        "preferences",
+        []
+    )
+
+    # --------------------------------------------------------
+    # Validate category
+    # --------------------------------------------------------
+
+    valid_categories = {
+        "headphones",
+        "laptop accessories",
+        "computer accessories",
+        "chargers",
+        "running shoes",
+        "sports accessories"
+    }
+
+    if category not in valid_categories:
+        category = None
+
+    # --------------------------------------------------------
+    # Validate price
+    # --------------------------------------------------------
+
+    if max_price is not None:
+
+        try:
+            max_price = float(max_price)
+
+        except (TypeError, ValueError):
+            max_price = None
+
+    # --------------------------------------------------------
+    # Validate preferences
+    # --------------------------------------------------------
+
+    if not isinstance(preferences, list):
+        preferences = []
+
+    preferences = [
+        str(item).strip()
+        for item in preferences
+        if str(item).strip()
+    ]
+
+    return {
+        "category": category,
+        "max_price": max_price,
+        "preferences": preferences
+    }
 
 
 # ============================================================
@@ -294,25 +430,40 @@ Customer request:
 
 def create_recommendation(user_message):
     """
-    Complete PayPilot AI recommendation workflow:
+    Complete PayPilot AI workflow:
 
-    1. Understand customer request
-    2. Extract requirements
-    3. Search product catalog
-    4. Rank products
-    5. Generate human-friendly recommendation
+    1. Understand customer request using Ollama
+    2. Search product catalog
+    3. Rank products
+    4. Generate final response using Ollama
     """
 
+    if not user_message or not user_message.strip():
+        raise ValueError(
+            "Shopping request cannot be empty."
+        )
+
+    user_message = user_message.strip()
+
     # --------------------------------------------------------
-    # STEP 1: Extract customer requirements
+    # STEP 1 - Extract requirements
     # --------------------------------------------------------
 
     requirements = extract_customer_requirements(
         user_message
     )
 
+    print("\nCUSTOMER REQUIREMENTS")
+    print(
+        json.dumps(
+            requirements,
+            indent=2,
+            ensure_ascii=False
+        )
+    )
+
     # --------------------------------------------------------
-    # STEP 2: Search product catalog
+    # STEP 2 - Search products
     # --------------------------------------------------------
 
     products = search_products(
@@ -321,8 +472,11 @@ def create_recommendation(user_message):
         preferences=requirements["preferences"]
     )
 
+    if products is None:
+        products = []
+
     # --------------------------------------------------------
-    # STEP 3: Rank matching products
+    # STEP 3 - Rank products
     # --------------------------------------------------------
 
     products = rank_products(
@@ -331,18 +485,50 @@ def create_recommendation(user_message):
         max_price=requirements["max_price"]
     )
 
-    # --------------------------------------------------------
-    # STEP 4: Generate customer-facing response
-    # --------------------------------------------------------
-
-    customer_response = generate_customer_response(
-        user_message,
-        requirements,
-        products
-    )
+    if products is None:
+        products = []
 
     # --------------------------------------------------------
-    # STEP 5: Return final result
+    # STEP 4 - Generate customer response
+    # --------------------------------------------------------
+
+    try:
+
+        customer_response = generate_customer_response(
+            user_message,
+            requirements,
+            products
+        )
+
+    except Exception as error:
+
+        print(
+            f"[WARNING] Ollama response generation failed: "
+            f"{error}"
+        )
+
+        # Safe fallback response
+        if products:
+
+            best = products[0]
+
+            customer_response = (
+                f"Based on your requirements, "
+                f"I recommend {best.get('name', 'this product')} "
+                f"at ₹{best.get('price', 'N/A')}. "
+                f"It is one of the best matches in our catalog."
+            )
+
+        else:
+
+            customer_response = (
+                "I could not find a matching product "
+                "in the current catalog. "
+                "Try changing your budget or preferences."
+            )
+
+    # --------------------------------------------------------
+    # STEP 5 - Return API response
     # --------------------------------------------------------
 
     return {
@@ -353,186 +539,26 @@ def create_recommendation(user_message):
 
 
 # ============================================================
-# PRINT REQUIREMENTS
-# ============================================================
-
-def print_requirements(requirements):
-
-    print("\nCUSTOMER REQUIREMENTS")
-    print("---------------------")
-
-    print(
-        json.dumps(
-            requirements,
-            indent=2,
-            ensure_ascii=False
-        )
-    )
-
-
-# ============================================================
-# PRINT PRODUCTS
-# ============================================================
-
-def print_products(products):
-
-    print("\nMATCHING PRODUCTS")
-    print("-----------------")
-
-    if not products:
-        print("No matching products found.")
-        return
-
-    for index, product in enumerate(
-        products,
-        start=1
-    ):
-
-        print(
-            f"{index}. "
-            f'{product["name"]} - '
-            f'₹{product["price"]} - '
-            f'Rating: {product["rating"]} - '
-            f'Score: {product["recommendation_score"]}'
-        )
-
-        matched_preferences = product.get(
-            "matched_preferences",
-            []
-        )
-
-        if matched_preferences:
-
-            print(
-                "   Matched preferences: "
-                + ", ".join(
-                    matched_preferences
-                )
-            )
-
-
-# ============================================================
-# PRINT BEST RECOMMENDATION
-# ============================================================
-
-def print_best_recommendation(products):
-
-    if not products:
-        return
-
-    best_product = products[0]
-
-    print("\nBEST RECOMMENDATION")
-    print("-------------------")
-
-    print(
-        f'🏆 {best_product["name"]}'
-    )
-
-    print(
-        f'Price: ₹{best_product["price"]}'
-    )
-
-    print(
-        f'Rating: ⭐ {best_product["rating"]}'
-    )
-
-    print(
-        f'Score: {best_product["recommendation_score"]}'
-    )
-
-
-# ============================================================
-# PRINT RECOMMENDATION REASONS
-# ============================================================
-
-def print_recommendation_reasons(
-    requirements,
-    products
-):
-
-    if not products:
-        return
-
-    best_product = products[0]
-
-    print("\nWHY THIS PRODUCT?")
-    print("-----------------")
-
-    reasons = []
-
-    # --------------------------------------------------------
-    # Budget reason
-    # --------------------------------------------------------
-
-    max_price = requirements.get(
-        "max_price"
-    )
-
-    if max_price is not None:
-
-        if best_product["price"] <= max_price:
-
-            reasons.append(
-                "It fits within your budget."
-            )
-
-    # --------------------------------------------------------
-    # Rating reason
-    # --------------------------------------------------------
-
-    if best_product["rating"] >= 4.5:
-
-        reasons.append(
-            "It has a strong customer rating."
-        )
-
-    # --------------------------------------------------------
-    # Preference reason
-    # --------------------------------------------------------
-
-    matched_preferences = best_product.get(
-        "matched_preferences",
-        []
-    )
-
-    if matched_preferences:
-
-        reasons.append(
-            "It matches your preferences: "
-            + ", ".join(
-                matched_preferences
-            )
-            + "."
-        )
-
-    # --------------------------------------------------------
-    # Fallback
-    # --------------------------------------------------------
-
-    if not reasons:
-
-        reasons.append(
-            "It has the highest recommendation "
-            "score among the matching products."
-        )
-
-    for reason in reasons:
-
-        print(
-            f"- {reason}"
-        )
-
-
-# ============================================================
-# MAIN
+# COMMAND LINE TEST
 # ============================================================
 
 def main():
 
-    print("\n==============================")
-    print("          PAYPILOT AI")
-    print("==============================")
+    print("\n================================")
+    print("         PAYPILOT AI")
+    print("================================")
+
+    print(
+        f"\nAI Engine: Ollama"
+    )
+
+    print(
+        f"Model: {OLLAMA_MODEL}"
+    )
+
+    print(
+        f"URL: {OLLAMA_URL}"
+    )
 
     user_message = input(
         "\nWhat are you looking for?\n> "
@@ -552,83 +578,58 @@ def main():
             user_message
         )
 
-        print_requirements(
-            result["requirements"]
-        )
+        print("\n")
+        print("==============================")
+        print("PAYPILOT AI RESULT")
+        print("==============================")
 
-        print_products(
-            result["products"]
-        )
-
-        print_best_recommendation(
-            result["products"]
-        )
-
-        print_recommendation_reasons(
-            result["requirements"],
-            result["products"]
-        )
-
-        print("\nPAYPILOT AI RESPONSE")
-        print("--------------------")
+        print("\nRequirements:")
 
         print(
-            result["message"]
+            json.dumps(
+                result["requirements"],
+                indent=2,
+                ensure_ascii=False
+            )
         )
 
-    except json.JSONDecodeError:
+        print("\nProducts:")
 
-        print("\nERROR")
-        print("-----")
+        if not result["products"]:
 
-        print(
-            "The AI returned an invalid JSON response."
-        )
+            print(
+                "No matching products found."
+            )
 
-    except requests.exceptions.ConnectionError:
+        else:
 
-        print("\nERROR")
-        print("-----")
+            for index, product in enumerate(
+                result["products"],
+                start=1
+            ):
 
-        print(
-            "Could not connect to Gemini API."
-        )
+                print(
+                    f"{index}. "
+                    f"{product.get('name', 'Unknown')} "
+                    f"- ₹{product.get('price', 'N/A')} "
+                    f"- ⭐ {product.get('rating', 'N/A')}"
+                )
 
-        print(
-            "Please check GEMINI_API_KEY."
-        )
-
-    except requests.exceptions.Timeout:
-
-        print("\nERROR")
-        print("-----")
-
-        print(
-            "Gemini API took too long to respond."
-        )
-
-    except requests.exceptions.HTTPError as error:
-
-        print("\nGEMINI API ERROR")
-        print("----------------")
-
-        print(error)
-
-        if error.response is not None:
-            print(error.response.text)
+        print("\nAI Response:")
+        print("------------------------------")
+        print(result["message"])
 
     except Exception as error:
 
         print("\nERROR")
-        print("-----")
-
+        print("------------------------------")
         print(
             f"{type(error).__name__}: {error}"
         )
 
 
 # ============================================================
-# PROGRAM START
+# START
 # ============================================================
 
 if __name__ == "__main__":

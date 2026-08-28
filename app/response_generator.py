@@ -1,30 +1,77 @@
+import json
 import os
 import requests
+
 from dotenv import load_dotenv
 
+
+# ============================================================
+# LOAD ENVIRONMENT
+# ============================================================
 
 load_dotenv()
 
 
 # ============================================================
-# GEMINI SETTINGS
+# OLLAMA CONFIGURATION
 # ============================================================
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.5-flash"
+OLLAMA_URL = os.getenv(
+    "OLLAMA_URL",
+    "http://127.0.0.1:11434/api/generate"
 )
 
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    f"models/{GEMINI_MODEL}:generateContent"
+OLLAMA_MODEL = os.getenv(
+    "OLLAMA_MODEL",
+    "qwen2.5:7b"
 )
 
 
 # ============================================================
-# CUSTOMER RESPONSE
+# OLLAMA CALL
+# ============================================================
+
+def call_ollama(prompt):
+    """
+    Generate text using local Ollama.
+    """
+
+    response = requests.post(
+        OLLAMA_URL,
+        json={
+            "model": OLLAMA_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.3
+            }
+        },
+        timeout=180
+    )
+
+    if not response.ok:
+
+        raise RuntimeError(
+            f"Ollama API error "
+            f"{response.status_code}: "
+            f"{response.text}"
+        )
+
+    data = response.json()
+
+    if "response" not in data:
+
+        raise RuntimeError(
+            f"Unexpected Ollama response: {data}"
+        )
+
+    return str(
+        data["response"]
+    ).strip()
+
+
+# ============================================================
+# GENERATE CUSTOMER RESPONSE
 # ============================================================
 
 def generate_customer_response(
@@ -32,16 +79,10 @@ def generate_customer_response(
     requirements,
     products
 ):
-
-    # --------------------------------------------------------
-    # Check Gemini API key
-    # --------------------------------------------------------
-
-    if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is missing."
-        )
-
+    """
+    Generate a human-friendly shopping recommendation
+    using Ollama/Qwen.
+    """
 
     # --------------------------------------------------------
     # No products
@@ -50,143 +91,96 @@ def generate_customer_response(
     if not products:
 
         return (
-            "I couldn't find a suitable product in our "
-            "current catalog. Try increasing your budget "
-            "or changing your preferences."
+            "I couldn't find a matching product in "
+            "the current catalog. "
+            "Try increasing your budget or changing "
+            "your preferences."
         )
 
-
     # --------------------------------------------------------
-    # Best product
-    # --------------------------------------------------------
-
-    best_product = products[0]
-
-
-    # --------------------------------------------------------
-    # Product information
+    # Limit products sent to AI
     # --------------------------------------------------------
 
-    product_information = []
+    product_data = []
 
-    for product in products:
+    for product in products[:5]:
 
-        product_information.append(
-            {
-                "name": product.get("name"),
-                "price": product.get("price"),
-                "rating": product.get("rating"),
-                "features": product.get(
-                    "features",
-                    []
-                ),
-                "description": product.get(
-                    "description",
-                    ""
-                )
-            }
-        )
+        product_data.append({
+            "name": product.get(
+                "name",
+                "Unknown"
+            ),
+            "price": product.get(
+                "price"
+            ),
+            "rating": product.get(
+                "rating"
+            ),
+            "description": product.get(
+                "description",
+                ""
+            ),
+            "features": product.get(
+                "features",
+                []
+            ),
+            "recommendation_score": product.get(
+                "recommendation_score"
+            ),
+            "matched_preferences": product.get(
+                "matched_preferences",
+                []
+            )
+        })
 
+    products_json = json.dumps(
+        product_data,
+        ensure_ascii=False,
+        indent=2
+    )
+
+    requirements_json = json.dumps(
+        requirements,
+        ensure_ascii=False,
+        indent=2
+    )
 
     # --------------------------------------------------------
     # Prompt
     # --------------------------------------------------------
 
     prompt = f"""
-You are PayPilot AI, a friendly shopping assistant.
+You are PayPilot AI, a helpful shopping assistant.
 
-Customer request:
-{user_message}
+The customer said:
 
-Customer requirements:
-{requirements}
+"{user_message}"
 
-Available products:
-{product_information}
+PayPilot understood these requirements:
 
-Best recommended product:
-{best_product.get("name")}
+{requirements_json}
+
+Available matching products:
+
+{products_json}
+
+Create a short, natural shopping recommendation.
 
 Rules:
 
-- Recommend only products from the available products.
-- Do not invent products.
-- Do not invent prices.
-- Do not invent features.
-- Mention the recommended product.
-- Mention its price.
-- Explain briefly why it is suitable.
-- Keep the response friendly.
-- Keep the response simple.
-- Do not mention recommendation scores.
-- Do not mention APIs.
-- Do not mention technical details.
+1. Recommend the best product first.
+2. Explain why it matches the customer's request.
+3. Mention price and rating when available.
+4. Mention relevant preferences.
+5. Do not invent specifications.
+6. Do not mention internal AI processing.
+7. Do not mention Ollama.
+8. Do not mention Gemini.
+9. Do not use markdown tables.
+10. Keep the answer friendly and easy to understand.
+11. Keep the answer under 150 words.
 
-Return only the customer-facing recommendation.
+Return only the customer-facing response.
 """
 
-
-    # --------------------------------------------------------
-    # Call Gemini
-    # --------------------------------------------------------
-
-    response = requests.post(
-
-        GEMINI_URL,
-
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY
-        },
-
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ],
-
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 300
-            }
-        },
-
-        timeout=60
-    )
-
-
-    # --------------------------------------------------------
-    # Check response
-    # --------------------------------------------------------
-
-    response.raise_for_status()
-
-
-    data = response.json()
-
-
-    # --------------------------------------------------------
-    # Get Gemini text
-    # --------------------------------------------------------
-
-    try:
-
-        answer = (
-            data["candidates"][0]
-            ["content"]["parts"][0]
-            ["text"]
-        )
-
-    except (KeyError, IndexError, TypeError):
-
-        raise RuntimeError(
-            f"Unexpected Gemini response: {data}"
-        )
-
-
-    return answer.strip()
+    return call_ollama(prompt)

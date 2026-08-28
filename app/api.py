@@ -1,13 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.agent import create_recommendation
 
 
-# ==========================================
-# CREATE FASTAPI APPLICATION
-# ==========================================
+# ============================================================
+# FASTAPI APPLICATION
+# ============================================================
 
 app = FastAPI(
     title="PayPilot AI",
@@ -16,17 +16,18 @@ app = FastAPI(
 )
 
 
-# ==========================================
-# CORS CONFIGURATION
-# ==========================================
+# ============================================================
+# CORS
+# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
 
-    # Allow frontend running through Live Server
     allow_origins=[
         "http://127.0.0.1:5500",
-        "http://localhost:5500"
+        "http://localhost:5500",
+        "http://127.0.0.1:8000",
+        "http://localhost:8000"
     ],
 
     allow_credentials=True,
@@ -37,49 +38,75 @@ app.add_middleware(
 )
 
 
-# ==========================================
+# ============================================================
 # REQUEST MODEL
-# ==========================================
+# ============================================================
 
 class ShoppingRequest(BaseModel):
 
     message: str
 
 
-# ==========================================
+# ============================================================
 # HOME
-# ==========================================
+# ============================================================
 
 @app.get("/")
 def home():
 
     return {
         "message": "Welcome to PayPilot AI API",
-        "status": "running"
+        "status": "running",
+        "ai_engine": "Ollama",
+        "model": "qwen2.5:7b"
     }
 
 
-# ==========================================
-# HEALTH CHECK
-# ==========================================
+# ============================================================
+# HEALTH
+# ============================================================
 
 @app.get("/health")
 def health():
 
     return {
-        "status": "healthy"
+        "status": "healthy",
+        "ai_engine": "Ollama",
+        "model": "qwen2.5:7b"
     }
 
 
-# ==========================================
-# RECOMMENDATION API
-# ==========================================
+# ============================================================
+# RECOMMEND
+# ============================================================
 
 @app.post("/recommend")
 def recommend(request: ShoppingRequest):
 
-    result = create_recommendation(
-        request.message
-    )
+    message = request.message.strip()
 
-    return result
+    if not message:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Shopping message cannot be empty."
+        )
+
+    try:
+
+        result = create_recommendation(
+            message
+        )
+
+        return result
+
+    except Exception as error:
+
+        print(
+            f"[ERROR] /recommend failed: {error}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )

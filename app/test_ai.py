@@ -3,69 +3,71 @@ import requests
 from dotenv import load_dotenv
 
 
-# Load environment variables
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
 load_dotenv()
 
 
-# Gemini configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# ============================================================
+# OLLAMA CONFIGURATION
+# ============================================================
 
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-3.7-flash"
+OLLAMA_URL = os.getenv(
+    "OLLAMA_URL",
+    "http://localhost:11434/api/generate"
 )
 
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    f"models/{GEMINI_MODEL}:generateContent"
+OLLAMA_MODEL = os.getenv(
+    "OLLAMA_MODEL",
+    "qwen2.5:7b"
 )
 
+
+# ============================================================
+# ASK OLLAMA
+# ============================================================
 
 def ask_ai(question):
     """
-    Send a question to Google Gemini
-    and return the generated response.
+    Send a question to Ollama and return
+    the generated response.
     """
 
-    if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is not configured."
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": question,
+                "stream": False
+            },
+
+            timeout=120
         )
 
-    response = requests.post(
-        GEMINI_URL,
+        response.raise_for_status()
 
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY
-        },
-
-        json={
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": question
-                        }
-                    ]
-                }
-            ]
-        },
-
-        timeout=120
-    )
-
-    response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(
+            f"Could not connect to Ollama: {e}"
+        )
 
     data = response.json()
 
-    return (
-        data["candidates"][0]
-        ["content"]
-        ["parts"][0]
-        ["text"]
-    ).strip()
+    if "response" not in data:
+        raise RuntimeError(
+            f"Unexpected Ollama response: {data}"
+        )
 
+    return data["response"].strip()
+
+
+# ============================================================
+# TEST OLLAMA
+# ============================================================
 
 if __name__ == "__main__":
 
