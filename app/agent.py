@@ -1,20 +1,52 @@
 import json
 import requests
+import os
+
+from dotenv import load_dotenv
 
 from app.product_search import search_products
 from app.recommendation import rank_products
 from app.response_generator import generate_customer_response
 
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "qwen2.5:7b"
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
 
+load_dotenv()
+
+
+# ============================================================
+# GEMINI CONFIGURATION
+# ============================================================
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+GEMINI_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-3.7-flash"
+)
+
+GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/v1beta/"
+    f"models/{GEMINI_MODEL}:generateContent"
+)
+
+
+# ============================================================
+# EXTRACT CUSTOMER REQUIREMENTS
+# ============================================================
 
 def extract_customer_requirements(user_message):
     """
-    Use the local Qwen model to understand the customer's
+    Use Gemini to understand the customer's
     shopping requirements.
     """
+
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY environment variable is not configured."
+        )
 
     prompt = f"""
 You are the requirement extraction component of PayPilot AI.
@@ -30,6 +62,7 @@ The JSON must contain exactly these fields:
 }}
 
 Available product categories are:
+
 - headphones
 - laptop accessories
 - computer accessories
@@ -56,6 +89,7 @@ Important rules:
 5. Extract the customer's actual preferences.
 
 Examples of preferences:
+
 - wireless
 - comfortable
 - noise cancellation
@@ -82,6 +116,7 @@ Examples of preferences:
 9. Do not invent products.
 
 10. Return JSON only.
+
 Do not include explanations.
 Do not include markdown.
 Do not include code fences.
@@ -91,26 +126,48 @@ Customer request:
 """
 
     response = requests.post(
-        OLLAMA_URL,
+        GEMINI_URL,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+        },
         json={
-            "model": MODEL,
-            "prompt": prompt,
-            "stream": False
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json"
+            }
         },
         timeout=120
     )
 
     response.raise_for_status()
 
-    result = response.json()["response"].strip()
+    data = response.json()
 
-    # Remove markdown code fences if the model adds them
-    result = result.replace("```json", "")
-    result = result.replace("```", "")
+    try:
+        result = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(
+            f"Unexpected Gemini response: {data}"
+        )
+
     result = result.strip()
 
     return json.loads(result)
 
+
+# ============================================================
+# CREATE RECOMMENDATION
+# ============================================================
 
 def create_recommendation(user_message):
     """
@@ -123,17 +180,17 @@ def create_recommendation(user_message):
     5. Generate human-friendly recommendation
     """
 
-    # -----------------------------------------
+    # --------------------------------------------------------
     # STEP 1: Extract customer requirements
-    # -----------------------------------------
+    # --------------------------------------------------------
 
     requirements = extract_customer_requirements(
         user_message
     )
 
-    # -----------------------------------------
+    # --------------------------------------------------------
     # STEP 2: Search product catalog
-    # -----------------------------------------
+    # --------------------------------------------------------
 
     products = search_products(
         category=requirements["category"],
@@ -141,9 +198,9 @@ def create_recommendation(user_message):
         preferences=requirements["preferences"]
     )
 
-    # -----------------------------------------
+    # --------------------------------------------------------
     # STEP 3: Rank matching products
-    # -----------------------------------------
+    # --------------------------------------------------------
 
     products = rank_products(
         products,
@@ -151,9 +208,9 @@ def create_recommendation(user_message):
         max_price=requirements["max_price"]
     )
 
-    # -----------------------------------------
+    # --------------------------------------------------------
     # STEP 4: Generate customer-facing response
-    # -----------------------------------------
+    # --------------------------------------------------------
 
     customer_response = generate_customer_response(
         user_message,
@@ -161,9 +218,9 @@ def create_recommendation(user_message):
         products
     )
 
-    # -----------------------------------------
+    # --------------------------------------------------------
     # STEP 5: Return final result
-    # -----------------------------------------
+    # --------------------------------------------------------
 
     return {
         "requirements": requirements,
@@ -171,6 +228,10 @@ def create_recommendation(user_message):
         "message": customer_response
     }
 
+
+# ============================================================
+# PRINT REQUIREMENTS
+# ============================================================
 
 def print_requirements(requirements):
     """
@@ -188,6 +249,10 @@ def print_requirements(requirements):
         )
     )
 
+
+# ============================================================
+# PRINT PRODUCTS
+# ============================================================
 
 def print_products(products):
     """
@@ -229,6 +294,10 @@ def print_products(products):
             )
 
 
+# ============================================================
+# PRINT BEST RECOMMENDATION
+# ============================================================
+
 def print_best_recommendation(products):
     """
     Display the highest-ranked product.
@@ -259,6 +328,10 @@ def print_best_recommendation(products):
     )
 
 
+# ============================================================
+# PRINT RECOMMENDATION REASONS
+# ============================================================
+
 def print_recommendation_reasons(
     requirements,
     products
@@ -278,7 +351,10 @@ def print_recommendation_reasons(
 
     reasons = []
 
+    # --------------------------------------------------------
     # Budget reason
+    # --------------------------------------------------------
+
     max_price = requirements.get(
         "max_price"
     )
@@ -291,14 +367,20 @@ def print_recommendation_reasons(
                 "It fits within your budget."
             )
 
+    # --------------------------------------------------------
     # Rating reason
+    # --------------------------------------------------------
+
     if best_product["rating"] >= 4.5:
 
         reasons.append(
             "It has a strong customer rating."
         )
 
+    # --------------------------------------------------------
     # Preference reason
+    # --------------------------------------------------------
+
     matched_preferences = best_product.get(
         "matched_preferences",
         []
@@ -314,7 +396,10 @@ def print_recommendation_reasons(
             + "."
         )
 
+    # --------------------------------------------------------
     # Fallback
+    # --------------------------------------------------------
+
     if not reasons:
 
         reasons.append(
@@ -328,6 +413,10 @@ def print_recommendation_reasons(
             f"- {reason}"
         )
 
+
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
 
@@ -349,50 +438,50 @@ def main():
 
     try:
 
-        # -----------------------------------------
+        # ----------------------------------------------------
         # RUN PAYPILOT AI
-        # -----------------------------------------
+        # ----------------------------------------------------
 
         result = create_recommendation(
             user_message
         )
 
-        # -----------------------------------------
+        # ----------------------------------------------------
         # SHOW CUSTOMER REQUIREMENTS
-        # -----------------------------------------
+        # ----------------------------------------------------
 
         print_requirements(
             result["requirements"]
         )
 
-        # -----------------------------------------
+        # ----------------------------------------------------
         # SHOW PRODUCTS
-        # -----------------------------------------
+        # ----------------------------------------------------
 
         print_products(
             result["products"]
         )
 
-        # -----------------------------------------
+        # ----------------------------------------------------
         # SHOW BEST PRODUCT
-        # -----------------------------------------
+        # ----------------------------------------------------
 
         print_best_recommendation(
             result["products"]
         )
 
-        # -----------------------------------------
+        # ----------------------------------------------------
         # SHOW REASONS
-        # -----------------------------------------
+        # ----------------------------------------------------
 
         print_recommendation_reasons(
             result["requirements"],
             result["products"]
         )
 
-        # -----------------------------------------
+        # ----------------------------------------------------
         # SHOW HUMAN-FRIENDLY AI RESPONSE
-        # -----------------------------------------
+        # ----------------------------------------------------
 
         print("\nPAYPILOT AI RESPONSE")
         print("--------------------")
@@ -400,10 +489,6 @@ def main():
         print(
             result["message"]
         )
-
-    # -----------------------------------------
-    # JSON ERROR
-    # -----------------------------------------
 
     except json.JSONDecodeError:
 
@@ -418,26 +503,19 @@ def main():
             "Please run the program again."
         )
 
-    # -----------------------------------------
-    # OLLAMA CONNECTION ERROR
-    # -----------------------------------------
-
     except requests.exceptions.ConnectionError:
 
         print("\nERROR")
         print("-----")
 
         print(
-            "Could not connect to Ollama."
+            "Could not connect to Gemini API."
         )
 
         print(
-            "Please make sure Ollama is running."
+            "Please check your internet connection "
+            "and GEMINI_API_KEY."
         )
-
-    # -----------------------------------------
-    # TIMEOUT ERROR
-    # -----------------------------------------
 
     except requests.exceptions.Timeout:
 
@@ -445,16 +523,26 @@ def main():
         print("-----")
 
         print(
-            "Ollama took too long to respond."
+            "Gemini API took too long to respond."
         )
 
         print(
             "Please try again."
         )
 
-    # -----------------------------------------
-    # OTHER ERRORS
-    # -----------------------------------------
+    except requests.exceptions.HTTPError as error:
+
+        print("\nGEMINI API ERROR")
+        print("----------------")
+
+        print(error)
+
+        try:
+            print(
+                error.response.text
+            )
+        except Exception:
+            pass
 
     except Exception as error:
 
@@ -466,9 +554,9 @@ def main():
         )
 
 
-# ---------------------------------------------
+# ============================================================
 # PROGRAM START
-# ---------------------------------------------
+# ============================================================
 
 if __name__ == "__main__":
     main()

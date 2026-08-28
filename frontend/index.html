@@ -1929,7 +1929,7 @@
 // ==========================================
 
 const API_URL =
-    "http://127.0.0.1:8000/recommend";
+    "https://paypilot-ai-api.onrender.com/recommend";
 
 
 
@@ -2111,8 +2111,7 @@ async function findProducts() {
 
         errorMessage.textContent =
             "Could not connect to PayPilot AI. " +
-            "Please make sure the FastAPI server " +
-            "and Ollama are running.";
+            "Please try again in a moment.";
 
 
         errorMessage.style.display =
