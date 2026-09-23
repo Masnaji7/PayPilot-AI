@@ -1,18 +1,45 @@
 # PayPilot AI
 
-PayPilot AI is a local AI-powered product recommendation project that I built to understand how Large Language Models can be combined with product search and recommendation logic.
+PayPilot AI is an AI-powered shopping assistant that I built to make product searching, recommendations, discounts, and ordering easier.
 
-The main idea is simple. A user can describe what they are looking for in normal language, and PayPilot AI tries to understand the request, find suitable products, rank them and generate a useful response.
+The main idea is simple: a user can describe what they are looking for in normal language, and PayPilot AI tries to understand the request, find suitable products, recommend relevant products, show available discounts, calculate the final price, and create an order.
 
-I built this project using Python, Ollama and a local Qwen model.
+I built this project as a learning project to understand how AI, product recommendation, backend APIs, and a simple shopping workflow can work together in one application.
 
-## Project Idea
+---
 
-Normally, when searching for a product, a user may need to check many products and compare their prices and features.
+## Project Overview
 
-PayPilot AI tries to make this process easier.
+When shopping online, users often need to search through many products, compare prices, check features, look for discounts, and decide which product is suitable.
+
+PayPilot AI tries to make this process easier by bringing these steps together in one application.
+
+### Basic Workflow
+
+```text
+User Request
+     ↓
+Understand User Requirement
+     ↓
+Search Products
+     ↓
+Find Matching Products
+     ↓
+Recommend Products
+     ↓
+Show Price & Discount
+     ↓
+Calculate Final Price
+     ↓
+User Selects Product
+     ↓
+Select Quantity
+     ↓
+Create Order
+     ↓
+Order Confirmation
 
 For example, a user can ask:
 
 ```text
-I need a good laptop for programming under ₹60,000.
+I need wireless headphones under ₹3,000.
